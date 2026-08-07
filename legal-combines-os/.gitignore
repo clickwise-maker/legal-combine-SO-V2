@@ -1,46 +1,53 @@
-# FRAMEWORK PLACEHOLDER
-# DO NOT DELETE
-# IMPLEMENT IN FUTURE PHASE: Phase 1
-
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 env/
 venv/
-.env
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.db
+*.log
 
-# Node
+# Node / Next.js
 node_modules/
+.npm/
 .next/
 out/
+build/
+dist/
+yarn-error.log
+pnpm-debug.log
+.env*.local
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Build
-dist/
-build/
-*.egg-info/
-
-# Database
-*.db
-*.sqlite3
-
-# Logs
-*.log
-logs/
-
-# OS
-.DS_Store
 Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Docker
+.docker/
+*.pid
+docker-compose.override.yml
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Misc
+*.tmp
+*.temp
+*.bak
+*.old
+*.sqlite3

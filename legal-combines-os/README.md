@@ -64,44 +64,36 @@ docker-compose up -d
 
 ## 🛠️ Tech Stack
 
-### Backend
-- **Framework**: FastAPI 0.104.1
-- **Server**: Uvicorn 0.24.0
-- **Database**: SQLAlchemy 2.0.23
-- **Authentication**: python-jose, bcrypt, passlib
-- **OTP**: pyotp (TOTP)
-- **Payments**: Razorpay 1.4.2
-- **Scraping**: requests, beautifulsoup4, lxml, tenacity
-- **Scheduler**: APScheduler 3.10.4
-
-### Frontend
-- **Framework**: Next.js 14
-- **UI**: React 18, Tailwind CSS 3.3
-- **Payments**: Razorpay SDK
-
-### Infrastructure
-- **Container**: Docker, Docker Compose
-- **Database**: PostgreSQL (production), SQLite (development)
+| Component | Technology |
+|-----------|------------|
+| Frontend | Next.js 14 + Tailwind CSS |
+| Backend | FastAPI + Python 3.11 |
+| Database | PostgreSQL + SQLAlchemy |
+| Cache | Redis |
+| AI/LLM | DeepSeek + Ollama + OpenRouter |
+| Auth | JWT + OTP + 2FA |
+| Payments | Razorpay |
+| Deployment | Docker Compose + Nginx |
 
 ## 🏗️ Architecture
 
 ```
 legal-combines-os/
 ├── backend/
-│   ├── api/           # REST API routes
+│   ├── api/           # Routes (auth, payments, marketplace)
 │   ├── models/        # SQLAlchemy models
-│   ├── services/      # Background services
-│   ├── tools/         # Scraper & utilities
-│   ├── agents/        # AI agent system
-│   ├── skills/        # AI skill definitions
-│   └── utils/         # JWT, database helpers
+│   ├── tools/         # Scrapers, document tools
+│   ├── services/      # Scheduler, LLM clients
+│   └── utils/         # JWT, database, security
 ├── frontend/
-│   └── src/
-│       ├── app/       # Next.js pages
-│       ├── components/# React components
-│       └── lib/       # API client
-├── docker/            # Container configs
-└── docs/              # Documentation
+│   ├── src/
+│   │   ├── app/       # Next.js pages
+│   │   ├── components/ # Auth, Payment components
+│   │   └── lib/       # API client
+│   └── package.json
+├── docker/            # Dockerfiles
+├── docs/              # Architecture, setup guides
+└── scripts/           # Setup and deployment scripts
 ```
 
 ## 📡 API Endpoints
@@ -214,16 +206,8 @@ npm start
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file.
+MIT © clickwise-maker
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
----
-
-Built with ❤️ for the legal community
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
