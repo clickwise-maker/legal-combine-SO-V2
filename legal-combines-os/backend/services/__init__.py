@@ -1,14 +1,6 @@
-# FRAMEWORK PLACEHOLDER
-# DO NOT DELETE
-# IMPLEMENT IN FUTURE PHASE: Phase 4
-
 """
-Backend Services Module
-
-Contains background services and workers:
-- Scraper Scheduler (APScheduler)
-- Notification Service
-- Analytics Service
+Legal Combines OS — Services Package
 """
-
-__all__ = ["scraper_scheduler"]
+from .scraper_scheduler import ScraperScheduler
+from .llm_router import LLMRouter
+from .email_service import EmailService
