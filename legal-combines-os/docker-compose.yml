@@ -1,0 +1,10 @@
+# FRAMEWORK PLACEHOLDER
+# DO NOT DELETE
+# IMPLEMENT IN FUTURE PHASE: Phase 6
+
+# Docker Compose Configuration
+# Will define services for:
+# - backend (FastAPI)
+# - frontend (Next.js)
+# - database (PostgreSQL)
+# - redis (Cache)
