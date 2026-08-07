@@ -1,154 +1,110 @@
-from datetime import datetime
-from enum import Enum
-from typing import Optional
+"""
+User Model — Authentication, Authorization, OTP
+"""
+
+
 import uuid
+from datetime import datetime, timedelta
+from enum import Enum as PyEnum
 
 
-class UserRole(str, Enum):
-    ADMIN = "admin"
+from sqlalchemy import Column, String, Boolean, DateTime, Enum, Integer
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from passlib.context import CryptContext
+
+
+from ..utils.database import Base
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class UserRole(str, PyEnum):
+    USER = "user"
     LAWYER = "lawyer"
-    CLIENT = "client"
-    GUEST = "guest"
+    TYPIST = "typist"
+    ADMIN = "admin"
 
 
-class UserStatus(str, Enum):
-    PENDING = "pending"
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    DEACTIVATED = "deactivated"
+class User(Base):
+    __tablename__ = "users"
 
 
-class User:
-    """User model for Legal Combines OS authentication system."""
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    phone = Column(String(20), unique=True, index=True, nullable=True)
+    name = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    is_locked = Column(Boolean, default=False)
+    failed_login_attempts = Column(Integer, default=0)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    def __init__(
-        self,
-        email: str,
-        password_hash: str,
-        first_name: str,
-        last_name: str,
-        role: UserRole = UserRole.CLIENT,
-        phone: Optional[str] = None,
-        user_id: Optional[str] = None,
-        status: UserStatus = UserStatus.PENDING,
-        otp_secret: Optional[str] = None,
-        otp_verified: bool = False,
-        otp_expiry: Optional[datetime] = None,
-        created_at: Optional[datetime] = None,
-        updated_at: Optional[datetime] = None,
-        last_login: Optional[datetime] = None,
-        failed_login_attempts: int = 0,
-        locked_until: Optional[datetime] = None,
-    ):
-        self.id = user_id or str(uuid.uuid4())
-        self.email = email.lower().strip()
-        self.password_hash = password_hash
-        self.first_name = first_name.strip()
-        self.last_name = last_name.strip()
-        self.role = role
-        self.phone = phone
-        self.status = status
-        self.otp_secret = otp_secret
-        self.otp_verified = otp_verified
-        self.otp_expiry = otp_expiry
-        self.created_at = created_at or datetime.utcnow()
-        self.updated_at = updated_at or datetime.utcnow()
-        self.last_login = last_login
-        self.failed_login_attempts = failed_login_attempts
-        self.locked_until = locked_until
 
-    @property
-    def full_name(self) -> str:
-        return f"{self.first_name} {self.last_name}"
+    # OTP fields
+    otp = Column(String(6), nullable=True)
+    otp_expires_at = Column(DateTime, nullable=True)
+    otp_verified = Column(Boolean, default=False)
 
-    @property
-    def is_locked(self) -> bool:
-        if self.locked_until and self.locked_until > datetime.utcnow():
+
+    # Relationships
+    lawyer_profile = relationship("LawyerProfile", back_populates="user", uselist=False)
+    typist_profile = relationship("TypistProfile", back_populates="user", uselist=False)
+    documents = relationship("Document", back_populates="user")
+    payments = relationship("Payment", back_populates="user")
+    bookings = relationship("Booking", back_populates="user")
+
+
+    def set_password(self, password: str):
+        """Hash and set password"""
+        self.hashed_password = pwd_context.hash(password)
+
+
+    def verify_password(self, password: str) -> bool:
+        """Verify password"""
+        return pwd_context.verify(password, self.hashed_password)
+
+
+    def generate_otp(self, length: int = 6) -> str:
+        """Generate and store OTP"""
+        import random
+        otp = ''.join(random.choices('0123456789', k=length))
+        self.otp = otp
+        self.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+        self.otp_verified = False
+        return otp
+
+
+    def verify_otp(self, otp: str) -> bool:
+        """Verify OTP"""
+        if not self.otp or self.otp_expires_at < datetime.utcnow():
+            return False
+        if self.otp == otp:
+            self.otp_verified = True
+            self.is_verified = True
             return True
+        self.failed_login_attempts += 1
+        if self.failed_login_attempts >= 5:
+            self.is_locked = True
         return False
 
-    @property
-    def is_active(self) -> bool:
-        return self.status == UserStatus.ACTIVE
 
-    def to_dict(self, include_sensitive: bool = False) -> dict:
-        """Convert user to dictionary for API responses."""
-        data = {
-            "id": self.id,
-            "email": self.email,
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "full_name": self.full_name,
-            "role": self.role.value,
-            "phone": self.phone,
-            "status": self.status.value,
-            "otp_verified": self.otp_verified,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "last_login": self.last_login.isoformat() if self.last_login else None,
-        }
-        if include_sensitive:
-            data["otp_secret"] = self.otp_secret
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "User":
-        """Create user instance from dictionary."""
-        return cls(
-            user_id=data.get("id"),
-            email=data["email"],
-            password_hash=data["password_hash"],
-            first_name=data["first_name"],
-            last_name=data["last_name"],
-            role=UserRole(data.get("role", "client")),
-            phone=data.get("phone"),
-            status=UserStatus(data.get("status", "pending")),
-            otp_secret=data.get("otp_secret"),
-            otp_verified=data.get("otp_verified", False),
-            otp_expiry=data.get("otp_expiry"),
-            created_at=data.get("created_at"),
-            updated_at=data.get("updated_at"),
-            last_login=data.get("last_login"),
-            failed_login_attempts=data.get("failed_login_attempts", 0),
-            locked_until=data.get("locked_until"),
-        )
+    def increment_failed_attempts(self):
+        """Increment failed login attempts"""
+        self.failed_login_attempts += 1
+        if self.failed_login_attempts >= 5:
+            self.is_locked = True
 
 
-class OTPAttempt:
-    """Track OTP verification attempts for rate limiting."""
+    def reset_failed_attempts(self):
+        """Reset failed login attempts"""
+        self.failed_login_attempts = 0
 
-    MAX_ATTEMPTS = 5
-    LOCKOUT_MINUTES = 15
 
-    def __init__(
-        self,
-        user_id: str,
-        attempts: int = 0,
-        locked_until: Optional[datetime] = None,
-        last_attempt: Optional[datetime] = None,
-    ):
-        self.user_id = user_id
-        self.attempts = attempts
-        self.locked_until = locked_until
-        self.last_attempt = last_attempt
-
-    @property
-    def is_locked(self) -> bool:
-        if self.locked_until and self.locked_until > datetime.utcnow():
-            return True
-        return False
-
-    def record_failure(self) -> None:
-        """Record a failed OTP attempt."""
-        self.attempts += 1
-        self.last_attempt = datetime.utcnow()
-        if self.attempts >= self.MAX_ATTEMPTS:
-            self.locked_until = datetime.utcnow().replace(
-                minute=datetime.utcnow().minute + self.LOCKOUT_MINUTES
-            )
-
-    def reset(self) -> None:
-        """Reset attempts after successful verification."""
-        self.attempts = 0
-        self.locked_until = None
-        self.last_attempt = None
+    def __repr__(self):
+        return f"<User {self.email}>"
