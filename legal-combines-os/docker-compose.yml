@@ -1,8 +1,6 @@
 # Docker Compose Configuration for Legal Combines OS
 # Services: backend (FastAPI), frontend (Next.js), postgres, redis, nginx
 
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15-alpine
