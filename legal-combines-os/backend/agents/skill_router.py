@@ -11,7 +11,7 @@ Routes tasks to appropriate AI skills based on request type.
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-from backend.agents.base_agent import BaseAgent
+from ..agents.base_agent import BaseAgent
 
 
 @dataclass

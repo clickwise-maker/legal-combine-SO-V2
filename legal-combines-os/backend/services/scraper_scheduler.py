@@ -182,7 +182,7 @@ class ScraperScheduler:
 
     async def _execute_task(self, task: ScrapeTask):
         """Execute a scraping task."""
-        from backend.tools.govt_scraper_tools import GovtScraperFactory
+        from ..tools.govt_scraper_tools import GovtScraperFactory
         import time
 
         task.status = TaskStatus.RUNNING

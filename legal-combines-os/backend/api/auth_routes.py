@@ -44,6 +44,9 @@ class TokenResponse(BaseModel):
     email: str
     role: str
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
 @router.post("/register", response_model=TokenResponse)
 @rate_limit(requests=10, period=60)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
@@ -116,8 +119,8 @@ async def verify_otp(request: OTPRequest, db: Session = Depends(get_db)):
     return {"message": "OTP verified successfully"}
 
 @router.post("/refresh")
-async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
-    payload = JWTUtils.decode_token(refresh_token)
+async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    payload = JWTUtils.decode_token(request.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     user = db.query(User).filter(User.id == payload.get("sub")).first()

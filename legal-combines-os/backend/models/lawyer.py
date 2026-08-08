@@ -48,6 +48,27 @@ class LawyerProfile(Base):
             avg = sum(r.rating for r in self.reviews) / len(self.reviews)
             self.rating = round(avg, 1)
 
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "bar_council_id": self.bar_council_id,
+            "specialization": self.specialization,
+            "experience_years": self.experience_years,
+            "hourly_rate": self.hourly_rate,
+            "fixed_fee": self.fixed_fee,
+            "location": self.location,
+            "bio": self.bio,
+            "is_verified": self.is_verified,
+            "is_available": self.is_available,
+            "rating": self.rating,
+            "total_cases": self.total_cases,
+            "total_bookings": self.total_bookings,
+            "total_revenue": self.total_revenue,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 class Booking(Base):
     __tablename__ = "bookings"
@@ -68,6 +89,21 @@ class Booking(Base):
     lawyer = relationship("LawyerProfile", back_populates="bookings")
     review = relationship("Review", back_populates="booking", uselist=False)
 
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "lawyer_id": str(self.lawyer_id) if self.lawyer_id else None,
+            "date": self.date.isoformat() if self.date else None,
+            "duration_hours": self.duration_hours,
+            "total_amount": self.total_amount,
+            "status": self.status.value if self.status else None,
+            "notes": self.notes,
+            "meeting_link": self.meeting_link,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 class Review(Base):
     __tablename__ = "reviews"
@@ -83,3 +119,14 @@ class Review(Base):
     booking = relationship("Booking", back_populates="review")
     lawyer = relationship("LawyerProfile", back_populates="reviews")
     user = relationship("User")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "booking_id": str(self.booking_id) if self.booking_id else None,
+            "lawyer_id": str(self.lawyer_id) if self.lawyer_id else None,
+            "user_id": str(self.user_id) if self.user_id else None,
+            "rating": self.rating,
+            "comment": self.comment,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

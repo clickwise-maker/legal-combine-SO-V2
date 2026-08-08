@@ -8,10 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 import os
-
+import logging
 
 from .config import Config
 from .api import auth_routes, payment_routes, marketplace_routes, document_routes, workspace_routes
+from .utils.database import Database
+
+logger = logging.getLogger("legal_combines_os")
 
 
 # Create FastAPI app
@@ -39,6 +42,16 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=Config.ALLOWED_HOSTS,
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables on startup."""
+    try:
+        Database.init_db()
+        logger.info("Database tables initialized.")
+    except Exception as e:
+        logger.warning(f"Database initialization skipped (DB may not be ready yet): {e}")
 
 
 # Root endpoint

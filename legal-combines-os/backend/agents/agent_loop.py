@@ -12,7 +12,7 @@ import asyncio
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-from backend.agents.base_agent import BaseAgent, AgentContext, AgentResponse
+from ..agents.base_agent import BaseAgent, AgentContext, AgentResponse
 
 
 @dataclass

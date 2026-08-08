@@ -1,6 +1,6 @@
 """
 Legal Combines OS — Agents Package
 """
-from .base_agent import BaseAgent, SkillAgent
+from .base_agent import BaseAgent, AgentContext, AgentResponse
 from .agent_loop import AgentLoop
 from .skill_router import SkillRouter

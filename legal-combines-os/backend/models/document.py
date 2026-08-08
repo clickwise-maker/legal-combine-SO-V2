@@ -50,7 +50,7 @@ class Document(Base):
     status = Column(Enum(DocumentStatus), default=DocumentStatus.UPLOADED)
     content = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)  # extracted metadata
+    doc_metadata = Column("metadata", JSON, nullable=True)  # extracted metadata
     uploaded_at = Column(DateTime, default=datetime.utcnow)
     analyzed_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

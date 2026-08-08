@@ -1,4 +1,7 @@
 # backend/Dockerfile
+# NOTE: The canonical backend Dockerfile is docker/backend/Dockerfile (uses
+# `uvicorn backend.main:app` so imports resolve). This file is kept for
+# standalone `docker build` usage from within the backend/ directory.
 FROM python:3.11-slim
 
 

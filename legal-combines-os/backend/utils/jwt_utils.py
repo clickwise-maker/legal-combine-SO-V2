@@ -49,7 +49,8 @@ class JWTUtils:
         payload = JWTUtils.decode_token(token)
         if not payload:
             return None
-        if payload.get("exp") < datetime.utcnow().timestamp():
+        exp = payload.get("exp")
+        if exp is None or exp < datetime.utcnow().timestamp():
             return None
         return payload
 

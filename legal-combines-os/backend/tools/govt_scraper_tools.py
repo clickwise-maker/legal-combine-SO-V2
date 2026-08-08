@@ -10,7 +10,8 @@ import requests
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from backend.utils.database import get_db_session
+from sqlalchemy import Column, String, Text, DateTime, JSON
+from ..utils.database import SessionLocal, Base
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,30 @@ class ScrapedDocument:
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
 
+class GovtDocument(Base):
+    """SQLAlchemy model for scraped government documents."""
+    __tablename__ = "govt_documents"
+
+    id = Column(String(255), primary_key=True)
+    title = Column(String(500), nullable=False)
+    document_type = Column(String(50), nullable=True)
+    source_type = Column(String(50), nullable=True)
+    source_url = Column(Text, nullable=True)
+    source_name = Column(String(255), nullable=True)
+    content = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    jurisdiction = Column(String(100), nullable=True)
+    ministry = Column(String(255), nullable=True)
+    act_number = Column(String(255), nullable=True)
+    gazette_date = Column(DateTime, nullable=True)
+    effective_date = Column(DateTime, nullable=True)
+    keywords = Column(Text, nullable=True)
+    doc_metadata = Column("metadata", JSON, nullable=True)
+    content_hash = Column(String(255), unique=True, index=True)
+    scraped_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BaseGovtScraper:
     """Base class for government website scrapers."""
 
@@ -134,43 +159,50 @@ class BaseGovtScraper:
 
     def save_to_database(self, documents: List[ScrapedDocument]) -> int:
         """Save scraped documents to database."""
-        session = get_db_session()
+        session = SessionLocal()
         saved_count = 0
 
-        for doc in documents:
-            doc.content_hash = self._compute_hash(doc.content)
+        try:
+            for doc in documents:
+                doc.content_hash = self._compute_hash(doc.content)
 
-            existing = session.query(GovtDocument).filter_by(
-                content_hash=doc.content_hash
-            ).first()
+                existing = session.query(GovtDocument).filter_by(
+                    content_hash=doc.content_hash
+                ).first()
 
-            if not existing:
-                db_doc = GovtDocument(
-                    title=doc.title,
-                    document_type=doc.document_type.value,
-                    source_type=doc.source_type.value,
-                    source_url=doc.source_url,
-                    source_name=doc.source_name,
-                    content=doc.content,
-                    summary=doc.summary,
-                    jurisdiction=doc.jurisdiction,
-                    ministry=doc.ministry,
-                    act_number=doc.act_number,
-                    gazette_date=doc.gazette_date,
-                    effective_date=doc.effective_date,
-                    keywords=",".join(doc.keywords),
-                    metadata=doc.metadata,
-                    content_hash=doc.content_hash,
-                    scraped_at=doc.scraped_at,
-                )
-                session.add(db_doc)
-                saved_count += 1
-            else:
-                existing.content = doc.content
-                existing.summary = doc.summary
-                existing.updated_at = datetime.utcnow()
+                if not existing:
+                    db_doc = GovtDocument(
+                        title=doc.title,
+                        document_type=doc.document_type.value,
+                        source_type=doc.source_type.value,
+                        source_url=doc.source_url,
+                        source_name=doc.source_name,
+                        content=doc.content,
+                        summary=doc.summary,
+                        jurisdiction=doc.jurisdiction,
+                        ministry=doc.ministry,
+                        act_number=doc.act_number,
+                        gazette_date=doc.gazette_date,
+                        effective_date=doc.effective_date,
+                        keywords=",".join(doc.keywords),
+                        doc_metadata=doc.metadata,
+                        content_hash=doc.content_hash,
+                        scraped_at=doc.scraped_at,
+                    )
+                    session.add(db_doc)
+                    saved_count += 1
+                else:
+                    existing.content = doc.content
+                    existing.summary = doc.summary
+                    existing.updated_at = datetime.utcnow()
 
-        session.commit()
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error saving scraped documents: {e}")
+        finally:
+            session.close()
+
         return saved_count
 
 

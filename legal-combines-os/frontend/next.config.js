@@ -3,9 +3,12 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   
-  // Image domains (for external images)
+  // Image remote patterns (for external images)
   images: {
-    domains: ['localhost', 'legal-combines.com'],
+    remotePatterns: [
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: 'legal-combines.com' },
+    ],
   },
   
   // Environment variables

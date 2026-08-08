@@ -82,7 +82,7 @@ class User(Base):
 
     def verify_otp(self, otp: str) -> bool:
         """Verify OTP"""
-        if not self.otp or self.otp_expires_at < datetime.utcnow():
+        if not self.otp or not self.otp_expires_at or self.otp_expires_at < datetime.utcnow():
             return False
         if self.otp == otp:
             self.otp_verified = True

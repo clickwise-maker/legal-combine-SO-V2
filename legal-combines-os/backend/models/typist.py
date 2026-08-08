@@ -37,6 +37,22 @@ class TypistProfile(Base):
     user = relationship("User", back_populates="typist_profile")
     orders = relationship("DocumentOrder", back_populates="typist")
 
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "specialization": self.specialization,
+            "experience_years": self.experience_years,
+            "rate_per_page": self.rate_per_page,
+            "rate_per_hour": self.rate_per_hour,
+            "is_available": self.is_available,
+            "total_orders": self.total_orders,
+            "total_revenue": self.total_revenue,
+            "rating": self.rating,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 class DocumentOrder(Base):
     __tablename__ = "document_orders"
@@ -57,3 +73,19 @@ class DocumentOrder(Base):
     user = relationship("User")
     typist = relationship("TypistProfile", back_populates="orders")
     document = relationship("Document")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "typist_id": str(self.typist_id) if self.typist_id else None,
+            "document_id": str(self.document_id) if self.document_id else None,
+            "order_type": self.order_type,
+            "page_count": self.page_count,
+            "total_amount": self.total_amount,
+            "status": self.status.value if self.status else None,
+            "instructions": self.instructions,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

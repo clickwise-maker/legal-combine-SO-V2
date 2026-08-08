@@ -19,7 +19,7 @@ class Config:
     # App
     APP_NAME = os.getenv("APP_NAME", "Legal Combines OS")
     VERSION = os.getenv("VERSION", "2.0.0")
-    DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+    DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     
     # Security
     SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")

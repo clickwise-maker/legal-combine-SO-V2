@@ -1,38 +1,36 @@
 import hashlib
 import hmac
 import os
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
 import razorpay
 from fastapi import APIRouter, HTTPException, Depends, Header, Request, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from backend.models.payment import (
+from ..models.payment import (
     SubscriptionPlan,
     Subscription,
     Payment,
     Commission,
-    SubscriptionStatus,
     PaymentStatus,
-    PaymentMethod,
+    SubscriptionInterval,
 )
-from backend.models.user import User
+from ..models.user import User
+from ..utils.database import get_db
 
 
-router = APIRouter(prefix="/api/payments", tags=["Payments"])
+router = APIRouter(tags=["Payments"])
 
 
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_xxxxxxxxxxxx")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "webhook_secret_xxxxxxxxxxxxx")
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "webhook_secret_here")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com/api/payments/webhook")
 
-client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-
-
-MOCK_SUBSCRIPTIONS_DB = {}
-MOCK_PAYMENTS_DB = {}
+client = razorpay.Client(auth=(RAZORPAY_KEY_ID or "", RAZORPAY_KEY_SECRET or ""))
 
 
 class CreateSubscriptionRequest(BaseModel):
@@ -41,6 +39,11 @@ class CreateSubscriptionRequest(BaseModel):
 
 class CancelSubscriptionRequest(BaseModel):
     immediate: bool = False
+
+
+class ConfirmSubscriptionRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
 
 
 class PaymentIntentResponse(BaseModel):
@@ -80,6 +83,20 @@ def verify_razorpay_signature(payload: str, signature: str) -> bool:
         return False
 
 
+def _is_valid_uuid(value: str) -> bool:
+    """Check if a string is a valid UUID."""
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _user_uuid(user_id: str):
+    """Convert user_id string to UUID if valid, else None."""
+    return uuid.UUID(user_id) if _is_valid_uuid(user_id) else None
+
+
 @router.get("/plans")
 async def get_subscription_plans():
     """Get all available subscription plans."""
@@ -100,7 +117,10 @@ async def get_plan_details(plan_id: str):
 
 
 @router.post("/subscriptions/create-order")
-async def create_payment_intent(request: CreateSubscriptionRequest):
+async def create_payment_intent(
+    request: CreateSubscriptionRequest,
+    db: Session = Depends(get_db),
+):
     """Create a Razorpay order for subscription payment."""
     user_id = get_current_user_id()
     plan = SubscriptionPlan.get_plan(request.plan_id)
@@ -126,23 +146,26 @@ async def create_payment_intent(request: CreateSubscriptionRequest):
         })
 
         payment = Payment(
-            user_id=user_id,
-            subscription_id="pending",
+            user_id=_user_uuid(user_id),
+            order_id=razorpay_order["id"],
             amount=amount,
-            razorpay_order_id=razorpay_order["id"],
+            currency="INR",
+            status=PaymentStatus.PENDING,
             description=f"Subscription to {plan['name']}",
-            metadata={"plan_id": plan["id"], "plan_name": plan["name"]},
         )
-        MOCK_PAYMENTS_DB[payment.id] = payment
+        db.add(payment)
+        db.commit()
+        db.refresh(payment)
 
         return PaymentIntentResponse(
             order_id=razorpay_order["id"],
             amount=amount,
             currency="INR",
-            key_id=RAZORPAY_KEY_ID,
+            key_id=RAZORPAY_KEY_ID or "",
         )
 
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order: {str(e)}"
@@ -151,17 +174,15 @@ async def create_payment_intent(request: CreateSubscriptionRequest):
 
 @router.post("/subscriptions/confirm")
 async def confirm_subscription(
-    razorpay_payment_id: str,
-    razorpay_order_id: str,
+    request: ConfirmSubscriptionRequest,
+    db: Session = Depends(get_db),
 ):
     """Confirm subscription after successful payment."""
     user_id = get_current_user_id()
 
-    payment = None
-    for p in MOCK_PAYMENTS_DB.values():
-        if p.razorpay_order_id == razorpay_order_id:
-            payment = p
-            break
+    payment = db.query(Payment).filter(
+        Payment.order_id == request.razorpay_order_id
+    ).first()
 
     if not payment:
         raise HTTPException(
@@ -170,9 +191,11 @@ async def confirm_subscription(
         )
 
     try:
-        razorpay_payment = client.payment.fetch(razorpay_payment_id)
+        razorpay_payment = client.payment.fetch(request.razorpay_payment_id)
 
-        plan = SubscriptionPlan.get_plan(payment.metadata.get("plan_id", ""))
+        plan = SubscriptionPlan.get_plan(
+            razorpay_payment.get("notes", {}).get("plan_id", "")
+        )
         if not plan:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -180,20 +203,24 @@ async def confirm_subscription(
             )
 
         subscription = Subscription(
-            user_id=user_id,
-            plan_id=plan["id"],
-            status=SubscriptionStatus.ACTIVE,
-            razorpay_subscription_id=razorpay_payment_id,
-            current_period_start=datetime.utcnow(),
-            current_period_end=datetime.utcnow() + timedelta(days=plan["duration_days"]),
+            user_id=payment.user_id,
+            payment_id=payment.id,
+            plan=SubscriptionPlan(plan["id"]),
+            interval=SubscriptionInterval.MONTHLY,
+            amount=plan["price"],
+            starts_at=datetime.utcnow(),
+            expires_at=datetime.utcnow() + timedelta(days=plan["duration_days"]),
+            is_active=True,
+            auto_renew=True,
         )
-        MOCK_SUBSCRIPTIONS_DB[subscription.id] = subscription
+        db.add(subscription)
 
-        payment.subscription_id = subscription.id
-        payment.razorpay_payment_id = razorpay_payment_id
+        payment.payment_id = request.razorpay_payment_id
         payment.status = PaymentStatus.COMPLETED
-        payment.payment_method = PaymentMethod(razorpay_payment.get("method", "card"))
         payment.completed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(subscription)
+        db.refresh(payment)
 
         return {
             "subscription": subscription.to_dict(),
@@ -201,8 +228,13 @@ async def confirm_subscription(
             "payment": payment.to_dict(),
         }
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
+        db.rollback()
         payment.status = PaymentStatus.FAILED
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to confirm subscription: {str(e)}"
@@ -212,6 +244,7 @@ async def confirm_subscription(
 @router.post("/webhook")
 async def razorpay_webhook(
     request: Request,
+    db: Session = Depends(get_db),
     x_razorpay_signature: Optional[str] = Header(None),
 ):
     """Handle Razorpay webhook events."""
@@ -234,50 +267,62 @@ async def razorpay_webhook(
         if event == "payment.captured":
             payment_entity = payload_data.get("payment", {})
             order_entity = payload_data.get("order", {})
-            
+
             razorpay_payment_id = payment_entity.get("id")
             razorpay_order_id = order_entity.get("id")
-            notes = order_entity.get("notes", {})
-            
-            for payment in MOCK_PAYMENTS_DB.values():
-                if payment.razorpay_order_id == razorpay_order_id:
-                    payment.razorpay_payment_id = razorpay_payment_id
-                    payment.status = PaymentStatus.COMPLETED
-                    payment.completed_at = datetime.utcnow()
+
+            payment = db.query(Payment).filter(
+                Payment.order_id == razorpay_order_id
+            ).first()
+            if payment:
+                payment.payment_id = razorpay_payment_id
+                payment.status = PaymentStatus.COMPLETED
+                payment.completed_at = datetime.utcnow()
 
         elif event == "payment.failed":
             payment_entity = payload_data.get("payment", {})
             razorpay_payment_id = payment_entity.get("id")
-            
-            for payment in MOCK_PAYMENTS_DB.values():
-                if payment.razorpay_payment_id == razorpay_payment_id:
-                    payment.status = PaymentStatus.FAILED
+
+            payment = db.query(Payment).filter(
+                Payment.payment_id == razorpay_payment_id
+            ).first()
+            if payment:
+                payment.status = PaymentStatus.FAILED
 
         elif event == "subscription.charged":
             subscription_entity = payload_data.get("subscription", {})
             razorpay_subscription_id = subscription_entity.get("id")
-            
-            for subscription in MOCK_SUBSCRIPTIONS_DB.values():
-                if subscription.razorpay_subscription_id == razorpay_subscription_id:
-                    plan = SubscriptionPlan.get_plan(subscription.plan_id)
-                    if plan:
-                        subscription.current_period_end = (
-                            subscription.current_period_end or datetime.utcnow()
-                        ) + timedelta(days=plan["duration_days"])
-                        subscription.status = SubscriptionStatus.ACTIVE
+
+            subscription = db.query(Subscription).filter(
+                Subscription.id == razorpay_subscription_id
+            ).first()
+            if subscription:
+                plan = SubscriptionPlan.get_plan(
+                    subscription.plan.value if subscription.plan else ""
+                )
+                if plan:
+                    subscription.expires_at = (
+                        subscription.expires_at or datetime.utcnow()
+                    ) + timedelta(days=plan["duration_days"])
+                    subscription.is_active = True
 
         elif event == "subscription.canceled":
             subscription_entity = payload_data.get("subscription", {})
             razorpay_subscription_id = subscription_entity.get("id")
-            
-            for subscription in MOCK_SUBSCRIPTIONS_DB.values():
-                if subscription.razorpay_subscription_id == razorpay_subscription_id:
-                    subscription.status = SubscriptionStatus.CANCELED
-                    subscription.canceled_at = datetime.utcnow()
 
+            subscription = db.query(Subscription).filter(
+                Subscription.id == razorpay_subscription_id
+            ).first()
+            if subscription:
+                subscription.is_active = False
+                subscription.auto_renew = False
+                subscription.canceled_at = datetime.utcnow()
+
+        db.commit()
         return {"status": "success"}
 
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Webhook processing failed: {str(e)}"
@@ -285,17 +330,23 @@ async def razorpay_webhook(
 
 
 @router.get("/subscriptions/current")
-async def get_current_subscription():
+async def get_current_subscription(db: Session = Depends(get_db)):
     """Get current user's active subscription."""
     user_id = get_current_user_id()
 
-    for subscription in MOCK_SUBSCRIPTIONS_DB.values():
-        if subscription.user_id == user_id and subscription.is_active:
-            plan = SubscriptionPlan.get_plan(subscription.plan_id)
-            return {
-                "subscription": subscription.to_dict(),
-                "plan": plan,
-            }
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == _user_uuid(user_id),
+        Subscription.is_active == True,  # noqa: E712
+    ).first()
+
+    if subscription:
+        plan = SubscriptionPlan.get_plan(
+            subscription.plan.value if subscription.plan else ""
+        )
+        return {
+            "subscription": subscription.to_dict(),
+            "plan": plan,
+        }
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -304,15 +355,17 @@ async def get_current_subscription():
 
 
 @router.post("/subscriptions/cancel")
-async def cancel_subscription(request: CancelSubscriptionRequest):
+async def cancel_subscription(
+    request: CancelSubscriptionRequest,
+    db: Session = Depends(get_db),
+):
     """Cancel current subscription."""
     user_id = get_current_user_id()
 
-    subscription = None
-    for sub in MOCK_SUBSCRIPTIONS_DB.values():
-        if sub.user_id == user_id and sub.is_active:
-            subscription = sub
-            break
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == _user_uuid(user_id),
+        Subscription.is_active == True,  # noqa: E712
+    ).first()
 
     if not subscription:
         raise HTTPException(
@@ -321,10 +374,14 @@ async def cancel_subscription(request: CancelSubscriptionRequest):
         )
 
     if request.immediate:
-        subscription.status = SubscriptionStatus.CANCELED
+        subscription.is_active = False
+        subscription.auto_renew = False
         subscription.canceled_at = datetime.utcnow()
     else:
-        subscription.cancel_at_period_end = True
+        subscription.auto_renew = False
+
+    db.commit()
+    db.refresh(subscription)
 
     return {
         "subscription": subscription.to_dict(),
@@ -337,15 +394,15 @@ async def cancel_subscription(request: CancelSubscriptionRequest):
 
 
 @router.post("/subscriptions/reactivate")
-async def reactivate_subscription():
+async def reactivate_subscription(db: Session = Depends(get_db)):
     """Reactivate a canceled subscription."""
     user_id = get_current_user_id()
 
-    subscription = None
-    for sub in MOCK_SUBSCRIPTIONS_DB.values():
-        if sub.user_id == user_id and sub.cancel_at_period_end:
-            subscription = sub
-            break
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == _user_uuid(user_id),
+        Subscription.auto_renew == False,  # noqa: E712
+        Subscription.is_active == True,  # noqa: E712
+    ).first()
 
     if not subscription:
         raise HTTPException(
@@ -353,7 +410,9 @@ async def reactivate_subscription():
             detail="No subscription scheduled for cancellation found"
         )
 
-    subscription.cancel_at_period_end = False
+    subscription.auto_renew = True
+    db.commit()
+    db.refresh(subscription)
 
     return {
         "subscription": subscription.to_dict(),
@@ -362,21 +421,25 @@ async def reactivate_subscription():
 
 
 @router.get("/history")
-async def get_payment_history():
+async def get_payment_history(db: Session = Depends(get_db)):
     """Get user's payment history."""
     user_id = get_current_user_id()
 
     user_payments = [
         payment.to_dict()
-        for payment in MOCK_PAYMENTS_DB.values()
-        if payment.user_id == user_id
+        for payment in db.query(Payment).filter(
+            Payment.user_id == _user_uuid(user_id),
+        ).all()
     ]
 
     return {"payments": user_payments}
 
 
 @router.post("/subscriptions/upgrade")
-async def upgrade_subscription(request: CreateSubscriptionRequest):
+async def upgrade_subscription(
+    request: CreateSubscriptionRequest,
+    db: Session = Depends(get_db),
+):
     """Upgrade to a different plan."""
     user_id = get_current_user_id()
     new_plan = SubscriptionPlan.get_plan(request.plan_id)
@@ -387,11 +450,10 @@ async def upgrade_subscription(request: CreateSubscriptionRequest):
             detail="Plan not found"
         )
 
-    current_subscription = None
-    for sub in MOCK_SUBSCRIPTIONS_DB.values():
-        if sub.user_id == user_id and sub.is_active:
-            current_subscription = sub
-            break
+    current_subscription = db.query(Subscription).filter(
+        Subscription.user_id == _user_uuid(user_id),
+        Subscription.is_active == True,  # noqa: E712
+    ).first()
 
     if not current_subscription:
         raise HTTPException(
@@ -399,17 +461,23 @@ async def upgrade_subscription(request: CreateSubscriptionRequest):
             detail="No active subscription to upgrade"
         )
 
-    current_plan = SubscriptionPlan.get_plan(current_subscription.plan_id)
+    current_plan = SubscriptionPlan.get_plan(
+        current_subscription.plan.value if current_subscription.plan else ""
+    )
     if current_plan and new_plan["price"] <= current_plan["price"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="New plan must have a higher price than current plan"
         )
 
-    current_subscription.plan_id = new_plan["id"]
-    current_subscription.current_period_end = datetime.utcnow() + timedelta(
+    current_subscription.plan = SubscriptionPlan(new_plan["id"])
+    current_subscription.amount = new_plan["price"]
+    current_subscription.expires_at = datetime.utcnow() + timedelta(
         days=new_plan["duration_days"]
     )
+
+    db.commit()
+    db.refresh(current_subscription)
 
     return {
         "subscription": current_subscription.to_dict(),
