@@ -37,7 +37,10 @@ class Config:
     DB_USER = os.getenv("DB_USER", "legal_user")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
     DB_NAME = os.getenv("DB_NAME", "legal_combines")
-    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
+    )
     
     # Redis
     REDIS_HOST = os.getenv("REDIS_HOST", "redis")

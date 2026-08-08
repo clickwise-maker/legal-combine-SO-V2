@@ -24,23 +24,24 @@ class SubscriptionPlan(str, PyEnum):
     PRO = "pro"
     ENTERPRISE = "enterprise"
 
-    # Plan catalog (pricing in INR paise is handled by callers)
-    _CATALOG = {
-        "free": {"id": "free", "name": "Free", "price": 0, "duration_days": 36500},
-        "basic": {"id": "basic", "name": "Basic", "price": 499, "duration_days": 30},
-        "pro": {"id": "pro", "name": "Professional", "price": 1499, "duration_days": 30},
-        "enterprise": {"id": "enterprise", "name": "Enterprise", "price": 4999, "duration_days": 365},
-    }
-
     @classmethod
     def get_plan(cls, plan_id: str):
         """Return plan catalog dict for a given plan id, or None."""
-        return cls._CATALOG.get(plan_id)
+        return _PLAN_CATALOG.get(plan_id)
 
     @classmethod
     def get_all_plans(cls):
         """Return all plan catalog dicts."""
-        return list(cls._CATALOG.values())
+        return list(_PLAN_CATALOG.values())
+
+
+# Plan catalog (pricing in INR paise is handled by callers)
+_PLAN_CATALOG = {
+    "free": {"id": "free", "name": "Free", "price": 0, "duration_days": 36500},
+    "basic": {"id": "basic", "name": "Basic", "price": 499, "duration_days": 30},
+    "pro": {"id": "pro", "name": "Professional", "price": 1499, "duration_days": 30},
+    "enterprise": {"id": "enterprise", "name": "Enterprise", "price": 4999, "duration_days": 365},
+}
 
 
 class SubscriptionInterval(str, PyEnum):
